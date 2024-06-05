@@ -1,88 +1,86 @@
-from flask import Flask, request, jsonify
-from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
-from flask_socketio import SocketIO, emit, join_room, leave_room, close_room, rooms, disconnect
+from flask import Flask, request, jsonify, render_template
+from flask_socketio import SocketIO, emit, join_room, leave_room
 import json
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_secret_key'  # Change this to a random secret key
-app.config['JWT_SECRET_KEY'] = 'your_jwt_secret_key'  # Change this to a random secret key
-
-jwt = JWTManager(app)
+app.config['SECRET_KEY'] = 'your_secret_key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 users = {}
 
-# Example user for login
-users_db = {'user1': 'password1'}
+@app.route('/')
+def index():
+    return index.html
 
-@app.route('/login', methods=['POST'])
-def login():
-    username = request.json.get('username', None)
-    password = request.json.get('password', None)
-    if username not in users_db or users_db[username] != password:
-        return jsonify({'msg': 'Bad username or password'}), 401
-
-    access_token = create_access_token(identity=username)
-    return jsonify(access_token=access_token)
-
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected')
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    print('Client disconnected')
-    for username, user in list(users.items()):
-        if user['conn'] == request.sid:
-            del users[username]
-            break
-
-@socketio.on('message')
-def handle_message(message):
-    print('Received message:', message)
-    data = json.loads(message)
-    user = users.get(data.get('name'))
-
-    if data['type'] == 'store_user':
-        if user:
-            emit('message', json.dumps({"type": "user already exists"}), room=request.sid)
+@socketio.on('store_user')
+def handle_store_user(data):
+    print(f"Received data in store_user: {data}")
+    
+    # Ensure data is a dictionary
+    if isinstance(data, str):
+        data = json.loads(data)
+    
+    username = data.get('name')
+    if username:
+        if username in users:
+            emit('user already exists', {'type': 'user already exists'}, room=request.sid)
         else:
-            print('User stored:', data['name'], "Id :", request.sid)
-            users[data['name']] = {'conn': request.sid}
-    elif data['type'] == 'start_call':
-        user_to_call = users.get(data['target'])
-        if user_to_call:
-            emit('message', json.dumps({"type": "call_response", "data": "user is ready for call"}), room=request.sid)
-        else:
-            emit('message', json.dumps({"type": "call_response", "data": "user is not online"}), room=request.sid)
-    elif data['type'] == 'create_offer':
-        user_to_receive_offer = users.get(data['target'])
-        if user_to_receive_offer:
-            emit('message', json.dumps({
-                "type": "offer_received",
-                "name": data['name'],
-                "data": {"sdp": data['data']['sdp']}
-            }), room=user_to_receive_offer['conn'])
-    elif data['type'] == 'create_answer':
-        user_to_receive_answer = users.get(data['target'])
-        if user_to_receive_answer:
-            emit('message', json.dumps({
-                "type": "answer_received",
-                "name": data['name'],
-                "data": {"sdp": data['data']['sdp']}
-            }), room=user_to_receive_answer['conn'])
-    elif data['type'] == 'ice_candidate':
-        user_to_receive_ice_candidate = users.get(data['target'])
-        if user_to_receive_ice_candidate:
-            emit('message', json.dumps({
-                "type": "ice_candidate",
-                "name": data['name'],
-                "data": {
-                    "sdpMLineIndex": data['data']['sdpMLineIndex'],
-                    "sdpMid": data['data']['sdpMid'],
-                    "sdpCandidate": data['data']['sdpCandidate']
-                }
-            }), room=user_to_receive_ice_candidate['conn'])
+            users[username] = request.sid
+            join_room(request.sid)
+            print(f"User {username} stored with SID {request.sid}")
+    else:
+        print("No username found in data")
+
+@socketio.on('start_call')
+def handle_start_call(data):
+    target = data['target']
+    caller = data['name']
+    if target in users:
+        emit('call_response', {'type': 'call_response', 'data': 'user is ready for call'}, room=request.sid)
+    else:
+        emit('call_response', {'type': 'call_response', 'data': 'user is not online'}, room=request.sid)
+
+@socketio.on('create_offer')
+def handle_create_offer(data):
+    target = data['target']
+    if target in users:
+        emit('offer_received', {
+            'type': 'offer_received',
+            'name': data['name'],
+            'target': target,
+            'data': {'sdp': data['data']['sdp']}
+        }, room=users[target])
+    else:
+        print(f"Target {target} not found in users")
+
+@socketio.on('create_answer')
+def handle_create_answer(data):
+    target = data['target']
+    if target in users:
+        emit('answer_received', {
+            'type': 'answer_received',
+            'name': data['name'],
+            'target': target,
+            'data': data['data']
+        }, room=users[target])
+    else:
+        print(f"Target {target} not found in users")
+
+@socketio.on('ice_candidate')
+def handle_ice_candidate(data):
+    target = data['target']
+    if target in users:
+        emit('ice_candidate', {
+            'type': 'ice_candidate',
+            'name': data['name'],
+            'data': {
+                'sdpMLineIndex': data['data']['sdpMLineIndex'],
+                'sdpMid': data['data']['sdpMid'],
+                'sdpCandidate': data['data']['sdpCandidate']
+            }
+        }, room=users[target])
+    else:
+        print(f"Target {target} not found in users")
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0',port=8080, debug=True)
+    socketio.run(app, host='192.168.1.8', port=5000, debug=True)
