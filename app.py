@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import json
 
@@ -10,15 +10,11 @@ users = {}
 
 @app.route('/')
 def index():
-    return index.html
+    return "Hello from server"
 
 @socketio.on('store_user')
 def handle_store_user(data):
     print(f"Received data in store_user: {data}")
-    
-    # Ensure data is a dictionary
-    if isinstance(data, str):
-        data = json.loads(data)
     
     username = data.get('name')
     if username:
@@ -83,4 +79,4 @@ def handle_ice_candidate(data):
         print(f"Target {target} not found in users")
 
 if __name__ == '__main__':
-    socketio.run(app, host='192.168.1.8', port=5000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=3000, debug=True)
