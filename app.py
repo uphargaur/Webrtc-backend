@@ -18,12 +18,10 @@ def handle_store_user(data):
     
     username = data.get('name')
     if username:
-        if username in users:
-            emit('user already exists', {'type': 'user already exists'}, room=request.sid)
-        else:
-            users[username] = request.sid
-            join_room(request.sid)
-            print(f"User {username} stored with SID {request.sid}")
+        users[username] = request.sid
+        join_room(request.sid)
+        print(f"User {username} stored with SID {request.sid}")
+        print("The real one", users[username])
     else:
         print("No username found in data")
 
